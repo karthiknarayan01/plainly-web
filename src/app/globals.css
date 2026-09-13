@@ -1,26 +1,67 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0a0a0d;
+  --background-elevated: #121216;
+  --border: #24242b;
+  --border-strong: #34343e;
+  --foreground: #e8e8ec;
+  --foreground-muted: #97979f;
+  --foreground-subtle: #5c5c66;
+  --accent: #e3a857;
+  --accent-foreground: #16130a;
 }
 
 @theme inline {
   --color-background: var(--background);
+  --color-background-elevated: var(--background-elevated);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-foreground-subtle: var(--foreground-subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+::selection {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+
+/* Shared, byte-identical between the live TextPageRenderer and the
+   offscreen pagination measurer in lib/text/paginateText.ts — any visual
+   change here must stay in both, or pagination drifts from what's shown. */
+.plainly-text-page {
+  box-sizing: border-box;
+  padding: 2.5rem 2rem;
+  font-size: 1.0625rem;
+  line-height: 1.75;
+  color: var(--foreground);
+}
+
+.plainly-text-heading {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin: 1.75rem 0 0.75rem;
+}
+
+.plainly-text-heading:first-child {
+  margin-top: 0;
+}
+
+.plainly-text-paragraph {
+  margin: 0 0 1rem;
+  color: var(--foreground-muted);
 }
