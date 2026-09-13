@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Plainly",
   description:
-    "Read dense PDFs — earnings statements, filings, technical books — in a clean, book-like interface, or have them rewritten in plain language without losing anything.",
+    "Plainly rewrites technical books and financial documents — like earnings statements — into plain language that's easy to read, without changing what they say.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

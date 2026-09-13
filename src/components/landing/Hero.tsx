@@ -7,29 +7,25 @@ export function Hero() {
         Plainly
       </p>
       <h1 className="text-3xl sm:text-4xl font-medium tracking-tight text-foreground mb-4">
-        Dense documents, read plainly.
+        Hard documents, made easy to read.
       </h1>
       <p className="text-foreground-muted leading-relaxed mb-12">
-        Plainly reads PDFs the way Books reads EPUBs — clean pages, smooth
-        scrolling, nothing else in the way. Pick a document below, and if
-        it&apos;s the kind that&apos;s deliberately hard to get through — an
-        earnings release, a filing, a technical manual — ask for a plain
-        language rewrite that keeps every idea and every number, just said
-        the way a person would say it.
+        Plainly rewrites technical books and financial documents — like
+        earnings statements — into plain language. It says the same things
+        as the original. It&apos;s just easier to read.
       </p>
 
       <div className="flex flex-col gap-8">
         <NumberedSection index={1} title="Pick a document">
-          Choose any PDF from your device. It opens instantly — nothing is
-          uploaded just to read it.
+          Choose a PDF from your device. Nothing is uploaded just to read
+          it.
         </NumberedSection>
-        <NumberedSection index={2} title="Read, or rewrite">
-          Read the original in a paginated, book-like view, or ask for a
-          plain-language rewrite first.
+        <NumberedSection index={2} title="Read it, or simplify it">
+          Read the original as-is, or ask for a simpler rewrite first.
         </NumberedSection>
-        <NumberedSection index={3} title="Nothing lost">
-          A rewrite means the same thing as the original — same claims, same
-          numbers, same figures — just easier to follow.
+        <NumberedSection index={3} title="Nothing is lost">
+          The rewrite means exactly what the original means — same facts,
+          same numbers. Just easier to follow.
         </NumberedSection>
       </div>
     </div>

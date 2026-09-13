@@ -167,7 +167,7 @@ export function ReaderPager({
   return (
     <div
       ref={scrollRef}
-      className="relative h-full overflow-y-auto snap-y snap-proximity"
+      className="relative h-full overflow-y-auto"
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((virtualItem) => (
