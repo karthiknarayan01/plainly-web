@@ -10,7 +10,12 @@ import { RewriteErrorState } from "@/components/flow/RewriteErrorState";
 import { Spinner } from "@/components/ui/Spinner";
 import { useDocumentStore } from "@/lib/state/documentStore";
 import { usePdfDocument } from "@/lib/pdf/usePdfDocument";
-import { requestRewrite } from "@/lib/rewrite/rewriteClient";
+import { extractPageTexts } from "@/lib/pdf/extractPageText";
+import {
+  createRewriteJob,
+  snapshotToResponseBody,
+  subscribeToRewriteJob,
+} from "@/lib/rewrite/rewriteClient";
 
 // The reader subtree touches pdf.js / browser-only file APIs — ssr:false
 // here guarantees zero server-side module evaluation, not just no render.
@@ -50,25 +55,40 @@ export function AppShell() {
   }, [status, doc, docError, documentLoaded, documentLoadFailed]);
 
   useEffect(() => {
-    if (status !== "rewriting" || !file || pageCount === null) return;
+    if (status !== "rewriting" || !file || !doc) return;
     let cancelled = false;
-    requestRewrite({
-      fileName: file.name,
-      pageCount,
-      fileSizeBytes: file.size,
-    })
-      .then((res) => {
-        if (!cancelled) rewriteSucceeded(res);
+    let unsubscribe: (() => void) | null = null;
+
+    extractPageTexts(doc)
+      .then((pages) => createRewriteJob(file.name, pages))
+      .then((jobId) => {
+        if (cancelled) return;
+        unsubscribe = subscribeToRewriteJob(
+          jobId,
+          (snapshot) => {
+            if (cancelled) return;
+            const body = snapshotToResponseBody(file.name, snapshot);
+            // Safe to call repeatedly — once already "reading-rewritten",
+            // this just refreshes `rewrite` with newly-completed pages as
+            // they land, rather than waiting for the whole document.
+            if (body.sections.length > 0) rewriteSucceeded(body);
+          },
+          (message) => {
+            if (!cancelled) rewriteFailed(message);
+          }
+        );
       })
       .catch((err: unknown) => {
         if (!cancelled) {
           rewriteFailed(err instanceof Error ? err.message : "Rewrite failed");
         }
       });
+
     return () => {
       cancelled = true;
+      unsubscribe?.();
     };
-  }, [status, file, pageCount, rewriteSucceeded, rewriteFailed]);
+  }, [status, file, doc, rewriteSucceeded, rewriteFailed]);
 
   if (status === "reading-original" && doc && file) {
     return <PdfReader doc={doc} fileName={file.name} onClose={reset} />;
