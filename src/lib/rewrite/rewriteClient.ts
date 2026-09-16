@@ -22,17 +22,30 @@ export async function createRewriteJob(
   return job_id;
 }
 
-/** Maps completed chunks into the shape the reader already knows how to
- * paginate — chunks still in progress simply aren't included yet, so the
- * reader naturally fills in page by page as more of them land. */
+/**
+ * Maps chunks into the shape the reader already knows how to paginate —
+ * but only the longest unbroken run starting at the first page, stopping
+ * at the first one that isn't done yet. The worker processes pages
+ * concurrently (16 lanes), so completion order isn't sequential — page
+ * 50 can easily finish before page 10. Revealing whatever's done in
+ * whatever order it finished would show the reader pages out of order;
+ * this instead withholds anything past the first gap, so what the reader
+ * sees always advances 1, 2, 3, ... even though the backend behind it
+ * isn't working in that order. A page with no text (a blank/divider page
+ * the worker correctly skipped) still counts as "done" for this purpose
+ * — it just contributes no section — so it doesn't block later pages
+ * from appearing once it's their turn.
+ */
 export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[] {
-  return snapshot.chunks
-    .filter((c) => c.status === "completed" && c.rewrite_text)
-    .sort((a, b) => a.chunk_index - b.chunk_index)
-    .map((c) => ({
-      heading: `Page ${c.chunk_index}`,
-      paragraphs: [c.rewrite_text as string],
-    }));
+  const sorted = [...snapshot.chunks].sort((a, b) => a.chunk_index - b.chunk_index);
+  const sections: RewriteSection[] = [];
+  for (const c of sorted) {
+    if (c.status !== "completed") break; // not done yet (or failed) — stop the reveal here
+    if (c.rewrite_text) {
+      sections.push({ heading: `Page ${c.chunk_index}`, paragraphs: [c.rewrite_text] });
+    }
+  }
+  return sections;
 }
 
 export function snapshotToResponseBody(
