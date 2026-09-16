@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import dynamic from "next/dynamic";
 import { Hero } from "@/components/landing/Hero";
 import { FilePicker } from "@/components/landing/FilePicker";
@@ -54,41 +54,83 @@ export function AppShell() {
     else if (doc) documentLoaded(doc.numPages);
   }, [status, doc, docError, documentLoaded, documentLoadFailed]);
 
+  // Tracks the in-flight job's subscription independently of React's own
+  // effect re-run cycle. This matters because rewriteSucceeded (called
+  // from inside the subscription callback below) flips `status` from
+  // "rewriting" to "reading-rewritten" — and since `status` is a
+  // dependency of this effect, that change makes React tear down and
+  // re-run it. If the subscription lived in the effect's own closure (a
+  // plain local variable), that teardown would close the SSE connection
+  // the instant the *first* page completed, and the re-run would exit
+  // immediately on the status guard below without reopening it — every
+  // page after the first would silently never arrive. Keeping it in a
+  // ref means the effect's own re-runs can't touch it; only a genuinely
+  // new file does.
+  const activeJobRef = useRef<{ file: File | null; unsubscribe: (() => void) | null }>({
+    file: null,
+    unsubscribe: null,
+  });
+
   useEffect(() => {
     if (status !== "rewriting" || !file || !doc) return;
-    let cancelled = false;
-    let unsubscribe: (() => void) | null = null;
+    if (activeJobRef.current.file === file) return; // already started for this file
+
+    activeJobRef.current.unsubscribe?.(); // in case a previous file's job is still open
+    activeJobRef.current = { file, unsubscribe: null };
+
+    // Guards only the async setup below (extract -> create job), not the
+    // subscription's ongoing callbacks once established. Kept separate
+    // from onUpdate/onError deliberately: this protects against a stale,
+    // replaced attempt's in-flight setup clobbering activeJobRef after a
+    // newer one has already taken over (e.g. the user picks a different
+    // file while extraction/job-creation for the first one is still
+    // running). It must NOT also gate onUpdate/onError — this effect's
+    // own cleanup runs on every "rewriting" -> "reading-rewritten"
+    // transition (see activeJobRef comment above), so gating the ongoing
+    // callbacks on the same flag would silently neuter every update
+    // after the first, even with the ref keeping the connection open.
+    let setupCancelled = false;
 
     extractPageTexts(doc)
       .then((pages) => createRewriteJob(file.name, pages))
       .then((jobId) => {
-        if (cancelled) return;
-        unsubscribe = subscribeToRewriteJob(
+        if (setupCancelled) return;
+        const unsubscribe = subscribeToRewriteJob(
           jobId,
           (snapshot) => {
-            if (cancelled) return;
             const body = snapshotToResponseBody(file.name, snapshot);
             // Safe to call repeatedly — once already "reading-rewritten",
             // this just refreshes `rewrite` with newly-completed pages as
             // they land, rather than waiting for the whole document.
             if (body.sections.length > 0) rewriteSucceeded(body);
           },
-          (message) => {
-            if (!cancelled) rewriteFailed(message);
-          }
+          (message) => rewriteFailed(message)
         );
+        activeJobRef.current.unsubscribe = unsubscribe;
       })
       .catch((err: unknown) => {
-        if (!cancelled) {
+        if (!setupCancelled) {
           rewriteFailed(err instanceof Error ? err.message : "Rewrite failed");
         }
       });
 
     return () => {
-      cancelled = true;
-      unsubscribe?.();
+      setupCancelled = true;
+      // Deliberately not closing the subscription here — see the
+      // activeJobRef comment above. A genuinely new file (guarded at the
+      // top of this effect) or an explicit reset (the effect below)
+      // closes it instead.
     };
   }, [status, file, doc, rewriteSucceeded, rewriteFailed]);
+
+  // Close the subscription on reset (back to "idle") — the effect above
+  // won't, since its guard exits before touching the ref in that case.
+  useEffect(() => {
+    if (status === "idle") {
+      activeJobRef.current.unsubscribe?.();
+      activeJobRef.current = { file: null, unsubscribe: null };
+    }
+  }, [status]);
 
   if (status === "reading-original" && doc && file) {
     return <PdfReader doc={doc} fileName={file.name} onClose={reset} />;
