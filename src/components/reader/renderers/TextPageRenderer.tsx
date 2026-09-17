@@ -39,7 +39,7 @@ export function TextPageRenderer({
       style={{ width: width * zoom, height: baseHeight * zoom }}
     >
       <div
-        className="plainly-text-page"
+        className="grasp-text-page"
         style={{
           width,
           height: baseHeight,
@@ -49,11 +49,11 @@ export function TextPageRenderer({
       >
         {source.page.blocks.map((block, i) =>
           block.type === "heading" ? (
-            <h3 key={i} className="plainly-text-heading">
+            <h3 key={i} className="grasp-text-heading">
               <Inline text={block.text} />
             </h3>
           ) : (
-            <p key={i} className="plainly-text-paragraph">
+            <p key={i} className="grasp-text-paragraph">
               <Inline text={block.text} />
             </p>
           )

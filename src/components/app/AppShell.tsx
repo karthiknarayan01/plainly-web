@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/Spinner";
 import { useDocumentStore } from "@/lib/state/documentStore";
 import { usePdfDocument } from "@/lib/pdf/usePdfDocument";
 import { extractPageTexts } from "@/lib/pdf/extractPageText";
+import { findIllustratedPages } from "@/lib/pdf/extractFigures";
 import {
   createRewriteJob,
   waitForRewriteJob,
@@ -53,6 +54,12 @@ export function AppShell() {
   // came from. Falls back to US Letter until the real size resolves.
   const [sourcePageAspect, setSourcePageAspect] = useState(11 / 8.5);
   const [progress, setProgress] = useState<RewriteProgress | null>(null);
+  // Source pages carrying a figure or table. Collected from the page text
+  // during extraction (no second PDF pass), so the reader can reproduce
+  // those pages and keep artwork a text-only rewrite would drop.
+  const [illustratedPages, setIllustratedPages] = useState<ReadonlySet<number>>(
+    () => new Set()
+  );
 
   useEffect(() => {
     if (!doc) return;
@@ -118,7 +125,10 @@ export function AppShell() {
     let setupCancelled = false;
 
     extractPageTexts(doc)
-      .then((pages) => createRewriteJob(file.name, pages))
+      .then((pages) => {
+        setIllustratedPages(new Set(findIllustratedPages(pages)));
+        return createRewriteJob(file.name, pages);
+      })
       .then((jobId) => {
         if (setupCancelled) return;
         // Waits for the ENTIRE document rather than revealing pages as
@@ -162,11 +172,16 @@ export function AppShell() {
     return <PdfReader doc={doc} fileName={file.name} onClose={reset} />;
   }
 
-  if (status === "reading-rewritten" && rewrite) {
+  // `doc` is required now: original pages are drawn from it. It is always
+  // present here in practice — a rewrite can only exist for a document
+  // that loaded — but the guard keeps that a type-level fact.
+  if (status === "reading-rewritten" && rewrite && doc) {
     return (
       <TextReader
         rewrite={rewrite}
         sourcePageAspect={sourcePageAspect}
+        doc={doc}
+        illustratedPages={illustratedPages}
         onClose={reset}
       />
     );

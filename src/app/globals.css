@@ -48,7 +48,7 @@ body {
    app meant to be read continuously for minutes at a time, not scanned,
    so it gets its own typographic treatment rather than inheriting
    whatever a UI panel would use. */
-.plainly-text-page {
+.grasp-text-page {
   box-sizing: border-box;
   padding: 3.5rem 3rem;
   font-family: var(--font-reading), Georgia, "Times New Roman", serif;
@@ -63,7 +63,7 @@ body {
   overflow: hidden;
 }
 
-.plainly-text-heading {
+.grasp-text-heading {
   font-family: var(--font-reading), Georgia, "Times New Roman", serif;
   font-size: 1.375rem;
   font-weight: 600;
@@ -71,11 +71,11 @@ body {
   margin: 0 0 1.25rem;
 }
 
-.plainly-text-heading:first-child {
+.grasp-text-heading:first-child {
   margin-top: 0;
 }
 
-.plainly-text-paragraph {
+.grasp-text-paragraph {
   margin: 0 0 1.15em;
   color: #1a1a1a;
 }

@@ -10,6 +10,9 @@
 export interface RewriteSection {
   heading?: string;
   paragraphs: string[];
+  /** 1-based page of the source PDF this text was rewritten from. Needed
+   *  so the reader can show that page's original artwork right after it. */
+  sourcePage: number;
 }
 
 export interface RewriteResponseBody {

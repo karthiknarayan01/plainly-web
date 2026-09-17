@@ -2,10 +2,11 @@
 
 import { useCallback, useState } from "react";
 import { BookReaderShell } from "./BookReaderShell";
-import { TextPageRenderer } from "./renderers/TextPageRenderer";
+import { RewritePageRenderer } from "./renderers/RewritePageRenderer";
 import { useContentWidth } from "./useContentWidth";
 import { useTextPaginator } from "@/lib/text/useTextPaginator";
 import type { RewriteResponseBody } from "@/lib/rewrite/types";
+import type { PDFDocumentProxy } from "@/lib/pdf/pdfjsClient";
 import type { PageContentRenderer, PageSource } from "./types";
 
 interface TextReaderProps {
@@ -17,12 +18,20 @@ interface TextReaderProps {
    * a jump between two different-looking apps.
    */
   sourcePageAspect: number;
+  /** The open source PDF. Original pages are drawn live from it, so no
+   *  artwork has to be extracted, uploaded or stored anywhere. */
+  doc: PDFDocumentProxy;
+  /** Source pages whose text advertises a figure or table; each is shown
+   *  in full after the prose rewritten from it. */
+  illustratedPages: ReadonlySet<number>;
   onClose: () => void;
 }
 
 export default function TextReader({
   rewrite,
   sourcePageAspect,
+  doc,
+  illustratedPages,
   onClose,
 }: TextReaderProps) {
   const { ref, width: contentWidth } = useContentWidth();
@@ -36,15 +45,30 @@ export default function TextReader({
   // whole document on every zoom click, which is exactly the thing that
   // makes a text reader feel unlike a PDF viewer.
   const pageHeight = contentWidth * sourcePageAspect;
-  const pages = useTextPaginator(rewrite.sections, contentWidth, pageHeight);
+  const pages = useTextPaginator(
+    rewrite.sections,
+    contentWidth,
+    pageHeight,
+    illustratedPages
+  );
 
   const getPageSource = useCallback(
-    (index: number): PageSource => ({
-      kind: "text",
-      page: pages[index],
-      pageAspect: sourcePageAspect,
-    }),
-    [pages, sourcePageAspect]
+    (index: number): PageSource => {
+      const page = pages[index];
+      return page.kind === "original"
+        ? {
+            kind: "original",
+            doc,
+            pageNumber: page.sourcePage,
+            pageAspect: sourcePageAspect,
+          }
+        : {
+            kind: "text",
+            page: { blocks: page.blocks },
+            pageAspect: sourcePageAspect,
+          };
+    },
+    [pages, sourcePageAspect, doc]
   );
 
   // Same formula as PdfReader's: the laid-out height of a page at the
@@ -68,7 +92,7 @@ export default function TextReader({
           pageCount={pages.length}
           getPageSource={getPageSource}
           estimateSize={estimateSize}
-          renderer={TextPageRenderer as PageContentRenderer}
+          renderer={RewritePageRenderer as PageContentRenderer}
           contentWidth={contentWidth}
           onClose={onClose}
           zoom={zoom}

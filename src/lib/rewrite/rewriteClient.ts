@@ -76,7 +76,7 @@ export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[]
         .split(/\n\s*\n/)
         .map((p) => stripMarkdown(p.trim()))
         .filter(Boolean);
-      sections.push({ paragraphs });
+      sections.push({ paragraphs, sourcePage: c.chunk_index });
     }
   }
   return sections;

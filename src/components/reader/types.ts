@@ -8,7 +8,16 @@ export type PageSource =
   // can be drawn to the same shape as the source PDF's pages. The pager
   // forwards only `source`, `width` and `zoom` to a renderer, so page
   // geometry has to arrive this way.
-  | { kind: "text"; page: TextPage; pageAspect: number };
+  | { kind: "text"; page: TextPage; pageAspect: number }
+  // An original page of the source PDF, reproduced inside the rewrite so
+  // its diagrams and tables aren't lost. Rendered by the same canvas path
+  // the "read the original" view uses.
+  | {
+      kind: "original";
+      doc: PDFDocumentProxy;
+      pageNumber: number;
+      pageAspect: number;
+    };
 
 export type RenderPriority = "high" | "idle" | "deferred";
 

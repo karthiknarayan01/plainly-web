@@ -52,20 +52,36 @@ function balanceBold(
 export interface TextBlock {
   type: "heading" | "paragraph";
   text: string;
+  /** Source PDF page this text came from. */
+  sourcePage: number;
 }
 
 export interface TextPage {
   blocks: TextBlock[];
 }
 
+/**
+ * What the reader actually pages through: rewritten prose, plus the
+ * occasional original page reproduced as-is.
+ *
+ * A rewrite is text, so every diagram, table and equation in the source
+ * would otherwise be dropped. Rather than extract artwork — which proved
+ * impossible to locate in a real book, see lib/pdf/extractFigures.ts —
+ * the original page is shown after the prose rewritten from it, drawn
+ * live from the PDF already in memory.
+ */
+export type ReaderPage =
+  | { kind: "text"; blocks: TextBlock[] }
+  | { kind: "original"; sourcePage: number };
+
 export function flattenSections(sections: RewriteSection[]): TextBlock[] {
   const blocks: TextBlock[] = [];
   for (const section of sections) {
     if (section.heading) {
-      blocks.push({ type: "heading", text: section.heading });
+      blocks.push({ type: "heading", text: section.heading, sourcePage: section.sourcePage });
     }
     for (const paragraph of section.paragraphs) {
-      blocks.push({ type: "paragraph", text: paragraph });
+      blocks.push({ type: "paragraph", text: paragraph, sourcePage: section.sourcePage });
     }
   }
   return blocks;
@@ -74,8 +90,8 @@ export function flattenSections(sections: RewriteSection[]): TextBlock[] {
 /**
  * Paginates at paragraph/heading granularity (a block never splits across
  * pages) by measuring against an offscreen element that shares the exact
- * CSS classes ("plainly-text-page", "plainly-text-heading",
- * "plainly-text-paragraph", defined in globals.css) used by the live
+ * CSS classes ("grasp-text-page", "grasp-text-heading",
+ * "grasp-text-paragraph", defined in globals.css) used by the live
  * TextPageRenderer — the measurement is only valid if those stay in sync.
  *
  * Runs synchronously since mocked rewrites are a handful of short
@@ -93,7 +109,7 @@ export function paginateBlocks(
   }
 
   const measurer = document.createElement("div");
-  measurer.className = "plainly-text-page";
+  measurer.className = "grasp-text-page";
   measurer.style.position = "fixed";
   measurer.style.top = "0";
   measurer.style.left = "-9999px";
@@ -109,7 +125,7 @@ export function paginateBlocks(
   const renderBlock = (block: TextBlock) => {
     const el = document.createElement(block.type === "heading" ? "h3" : "p");
     el.className =
-      block.type === "heading" ? "plainly-text-heading" : "plainly-text-paragraph";
+      block.type === "heading" ? "grasp-text-heading" : "grasp-text-paragraph";
     for (const span of splitBold(block.text)) {
       if (span.bold) {
         const strong = document.createElement("strong");
@@ -199,4 +215,34 @@ export function paginateBlocks(
 
   document.body.removeChild(measurer);
   return pages;
+}
+
+/**
+ * Interleaves original source pages into the paginated rewrite.
+ *
+ * An original page is inserted after the LAST reader page containing text
+ * from it, so the diagram arrives once the prose explaining it has been
+ * read — not in the middle of it. Pagination still packs prose densely
+ * across source-page boundaries, so a source page's text can span several
+ * reader pages; only the final one gets the artwork.
+ */
+export function withOriginalPages(
+  pages: TextPage[],
+  illustratedPages: ReadonlySet<number>
+): ReaderPage[] {
+  const out: ReaderPage[] = [];
+  for (let i = 0; i < pages.length; i++) {
+    out.push({ kind: "text", blocks: pages[i].blocks });
+
+    const here = new Set(pages[i].blocks.map((b) => b.sourcePage));
+    const next = new Set((pages[i + 1]?.blocks ?? []).map((b) => b.sourcePage));
+    // Ascending, so multiple source pages ending on one reader page keep
+    // their original order.
+    for (const sourcePage of [...here].sort((a, b) => a - b)) {
+      if (!illustratedPages.has(sourcePage)) continue;
+      if (next.has(sourcePage)) continue; // this page continues overleaf
+      out.push({ kind: "original", sourcePage });
+    }
+  }
+  return out;
 }
