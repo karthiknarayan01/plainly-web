@@ -12,6 +12,10 @@ export function RewriteLoadingState({
   // which for a few hundred pages is minutes of waiting. A bare spinner
   // for that long is indistinguishable from a hang, so show the real
   // count the server reports.
+  // Failed pages still count toward the total shown. The count itself
+  // isn't surfaced — but a failure is a page that's finished being
+  // attempted, so excluding it would leave the bar short of 100% on a job
+  // that has actually ended, looking stuck when nothing is stuck.
   const done = progress ? progress.completed + progress.failed : 0;
   const total = progress?.total ?? 0;
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
@@ -34,7 +38,6 @@ export function RewriteLoadingState({
           </div>
           <p className="mt-3 font-mono text-xs text-foreground-muted">
             {done} / {total} pages
-            {progress && progress.failed > 0 ? ` · ${progress.failed} failed` : ""}
           </p>
           <p className="mt-2 text-xs text-foreground-subtle">
             The whole document opens at once when it&rsquo;s ready.
