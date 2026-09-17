@@ -24,18 +24,19 @@ export async function createRewriteJob(
 }
 
 /**
- * The reader renders plain prose into <p> elements, so any Markdown the
- * writer model emits would reach the page as literal punctuation —
- * confirmed on a real page, where the writer produced
- * "**Why Management and Leadership**" and the reader would have shown the
- * asterisks. The prompt already asks for plain text with no headings;
- * this is the belt-and-braces version, since one model ignoring that
- * instruction shouldn't put asterisks in front of a reader.
+ * Strips the Markdown the reader can't render, and KEEPS \*\*bold\*\*,
+ * which it can — the prompt asks the writer to highlight the handful of
+ * figures and defined terms that carry a page, and TextPageRenderer turns
+ * those into real <strong> elements.
+ *
+ * Everything else still has to go: headings, bullets and italics reach a
+ * plain-prose page as literal punctuation. Confirmed on a real page,
+ * where the writer emitted "## Why Management and Leadership" and the
+ * reader would have shown the hashes.
  */
 function stripMarkdown(text: string): string {
   return text
     .replace(/^#{1,6}\s+/gm, "") // "## Heading" -> "Heading"
-    .replace(/\*\*(.+?)\*\*/g, "$1") // bold
     .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2") // italic, leaving ** alone
     .replace(/^\s*[-*]\s+/gm, "") // list bullets
     .trim();
@@ -90,6 +91,7 @@ export function snapshotToResponseBody(
     sourceFileName: filename,
     generatedAt: snapshot.job.updated_at,
     sections: chunksToSections(snapshot),
+    failedPages: snapshot.chunks.filter((c) => c.status === "failed").length,
   };
 }
 

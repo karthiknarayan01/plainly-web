@@ -17,6 +17,15 @@ export interface RewriteResponseBody {
   sourceFileName: string;
   generatedAt: string;
   sections: RewriteSection[];
+  /**
+   * Pages the worker genuinely could not rewrite. NOT the same as
+   * "pages that produced no section": the worker deliberately skips
+   * contents and index pages, and those contribute nothing on purpose.
+   * Inferring trouble from a section shortfall reported deliberate skips
+   * as failures ("2 of 4 pages couldn't be rewritten" for a document
+   * whose front matter was correctly dropped).
+   */
+  failedPages: number;
 }
 
 export interface RewriteErrorBody {

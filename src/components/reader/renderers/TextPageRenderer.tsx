@@ -1,4 +1,17 @@
+import { splitBold } from "@/lib/text/paginateText";
 import type { PageContentRendererProps, PageSource } from "../types";
+
+/** Renders the writer's **highlights** as real bold, via the same parser
+ *  the paginator measures with, so drawn text matches measured text. */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {splitBold(text).map((span, i) =>
+        span.bold ? <strong key={i}>{span.text}</strong> : <span key={i}>{span.text}</span>
+      )}
+    </>
+  );
+}
 
 type TextSource = Extract<PageSource, { kind: "text" }>;
 
@@ -37,11 +50,11 @@ export function TextPageRenderer({
         {source.page.blocks.map((block, i) =>
           block.type === "heading" ? (
             <h3 key={i} className="plainly-text-heading">
-              {block.text}
+              <Inline text={block.text} />
             </h3>
           ) : (
             <p key={i} className="plainly-text-paragraph">
-              {block.text}
+              <Inline text={block.text} />
             </p>
           )
         )}

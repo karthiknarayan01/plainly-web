@@ -17,19 +17,12 @@ interface TextReaderProps {
    * a jump between two different-looking apps.
    */
   sourcePageAspect: number;
-  /** Total pages in the source PDF. The reader only opens once the whole
-   *  job is finished, so a shortfall here is not work still in progress —
-   *  it means those pages failed and are never coming. Saying so is the
-   *  difference between a reader thinking the app lost their document and
-   *  knowing exactly what it couldn't do. */
-  sourcePageCount: number;
   onClose: () => void;
 }
 
 export default function TextReader({
   rewrite,
   sourcePageAspect,
-  sourcePageCount,
   onClose,
 }: TextReaderProps) {
   const { ref, width: contentWidth } = useContentWidth();
@@ -66,10 +59,10 @@ export default function TextReader({
       {pages.length > 0 ? (
         <BookReaderShell
           title={
-            rewrite.sections.length < sourcePageCount
-              ? `${rewrite.sourceFileName} — Plain Language · ${
-                  sourcePageCount - rewrite.sections.length
-                } of ${sourcePageCount} pages couldn't be rewritten`
+            rewrite.failedPages > 0
+              ? `${rewrite.sourceFileName} — Plain Language · ${rewrite.failedPages} page${
+                  rewrite.failedPages === 1 ? "" : "s"
+                } couldn't be rewritten`
               : `${rewrite.sourceFileName} — Plain Language`
           }
           pageCount={pages.length}

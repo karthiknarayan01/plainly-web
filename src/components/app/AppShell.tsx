@@ -167,7 +167,6 @@ export function AppShell() {
       <TextReader
         rewrite={rewrite}
         sourcePageAspect={sourcePageAspect}
-        sourcePageCount={pageCount ?? rewrite.sections.length}
         onClose={reset}
       />
     );

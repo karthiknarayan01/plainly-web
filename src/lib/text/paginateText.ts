@@ -1,5 +1,54 @@
 import type { RewriteSection } from "@/lib/rewrite/types";
 
+export interface InlineSpan {
+  text: string;
+  bold: boolean;
+}
+
+/**
+ * Splits "**gross margin** is the share…" into bold/plain runs.
+ *
+ * Both the live renderer and the offscreen measurer below run text
+ * through this, so what gets measured is exactly what gets drawn. Bold
+ * glyphs are wider than regular ones; measuring plain text and then
+ * rendering bold would silently overflow every page that highlights
+ * anything.
+ */
+export function splitBold(text: string): InlineSpan[] {
+  const spans: InlineSpan[] = [];
+  const re = /\*\*(.+?)\*\*/g;
+  let last = 0;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    if (m.index > last) spans.push({ text: text.slice(last, m.index), bold: false });
+    spans.push({ text: m[1], bold: true });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) spans.push({ text: text.slice(last), bold: false });
+  return spans.length > 0 ? spans : [{ text, bold: false }];
+}
+
+/**
+ * Closes a bold run that a page break landed inside.
+ *
+ * Pages split between words, and a highlight can straddle that break —
+ * leaving "**gross" at the foot of one page and "margin**" at the head of
+ * the next, which renders as literal asterisks in both places. Closing
+ * the run on the first page and reopening it on the second keeps the
+ * emphasis and the markers balanced.
+ */
+function balanceBold(
+  head: string,
+  tail: string,
+  block: TextBlock
+): [TextBlock, TextBlock] {
+  const unclosed = (head.match(/\*\*/g)?.length ?? 0) % 2 === 1;
+  return [
+    { ...block, text: unclosed ? `${head}**` : head },
+    { ...block, text: unclosed ? `**${tail}` : tail },
+  ];
+}
+
 export interface TextBlock {
   type: "heading" | "paragraph";
   text: string;
@@ -61,7 +110,15 @@ export function paginateBlocks(
     const el = document.createElement(block.type === "heading" ? "h3" : "p");
     el.className =
       block.type === "heading" ? "plainly-text-heading" : "plainly-text-paragraph";
-    el.textContent = block.text;
+    for (const span of splitBold(block.text)) {
+      if (span.bold) {
+        const strong = document.createElement("strong");
+        strong.textContent = span.text;
+        el.appendChild(strong);
+      } else {
+        el.appendChild(document.createTextNode(span.text));
+      }
+    }
     return el;
   };
 
@@ -101,10 +158,11 @@ export function paginateBlocks(
     }
     if (lo <= 0) return [null, block];
     if (lo >= words.length) return [block, null];
-    return [
-      { ...block, text: words.slice(0, lo).join(" ") },
-      { ...block, text: words.slice(lo).join(" ") },
-    ];
+    return balanceBold(
+      words.slice(0, lo).join(" "),
+      words.slice(lo).join(" "),
+      block
+    );
   };
 
   for (const block of blocks) {
