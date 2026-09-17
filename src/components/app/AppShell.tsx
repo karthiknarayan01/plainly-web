@@ -13,8 +13,8 @@ import { usePdfDocument } from "@/lib/pdf/usePdfDocument";
 import { extractPageTexts } from "@/lib/pdf/extractPageText";
 import {
   createRewriteJob,
-  snapshotToResponseBody,
-  subscribeToRewriteJob,
+  waitForRewriteJob,
+  type RewriteProgress,
 } from "@/lib/rewrite/rewriteClient";
 
 // The reader subtree touches pdf.js / browser-only file APIs — ssr:false
@@ -52,6 +52,7 @@ export function AppShell() {
   // lay its pages out identically to the original one the reader just
   // came from. Falls back to US Letter until the real size resolves.
   const [sourcePageAspect, setSourcePageAspect] = useState(11 / 8.5);
+  const [progress, setProgress] = useState<RewriteProgress | null>(null);
 
   useEffect(() => {
     if (!doc) return;
@@ -120,18 +121,18 @@ export function AppShell() {
       .then((pages) => createRewriteJob(file.name, pages))
       .then((jobId) => {
         if (setupCancelled) return;
-        const unsubscribe = subscribeToRewriteJob(
+        // Waits for the ENTIRE document rather than revealing pages as
+        // they finish. Pages complete out of order across the worker's
+        // lanes, so a partial reveal could only ever show the run from
+        // page 1 and looked like the rest had been lost.
+        const abandon = waitForRewriteJob(
           jobId,
-          (snapshot) => {
-            const body = snapshotToResponseBody(file.name, snapshot);
-            // Safe to call repeatedly — once already "reading-rewritten",
-            // this just refreshes `rewrite` with newly-completed pages as
-            // they land, rather than waiting for the whole document.
-            if (body.sections.length > 0) rewriteSucceeded(body);
-          },
+          file.name,
+          setProgress,
+          (body) => rewriteSucceeded(body),
           (message) => rewriteFailed(message)
         );
-        activeJobRef.current.unsubscribe = unsubscribe;
+        activeJobRef.current.unsubscribe = abandon;
       })
       .catch((err: unknown) => {
         if (!setupCancelled) {
@@ -213,7 +214,13 @@ export function AppShell() {
       )}
 
       {status === "rewriting" && file && (
-        <RewriteLoadingState fileName={file.name} />
+        <RewriteLoadingState
+          fileName={file.name}
+          // Derived rather than cleared in an effect: progress is only
+          // meaningful while a rewrite is running, so gating the read
+          // avoids an extra setState-in-effect cascade.
+          progress={status === "rewriting" ? progress : null}
+        />
       )}
 
       {status === "rewrite-error" && (

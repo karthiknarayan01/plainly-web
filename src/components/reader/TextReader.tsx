@@ -17,11 +17,11 @@ interface TextReaderProps {
    * a jump between two different-looking apps.
    */
   sourcePageAspect: number;
-  /** Total pages in the source PDF, so the reader can say how much of the
-   *  document has arrived. Pages are revealed strictly in order, so while
-   *  the worker is still going the reader legitimately holds fewer pages
-   *  than the document has — without saying so, that looks like the rest
-   *  was lost. */
+  /** Total pages in the source PDF. The reader only opens once the whole
+   *  job is finished, so a shortfall here is not work still in progress —
+   *  it means those pages failed and are never coming. Saying so is the
+   *  difference between a reader thinking the app lost their document and
+   *  knowing exactly what it couldn't do. */
   sourcePageCount: number;
   onClose: () => void;
 }
@@ -67,7 +67,9 @@ export default function TextReader({
         <BookReaderShell
           title={
             rewrite.sections.length < sourcePageCount
-              ? `${rewrite.sourceFileName} — Plain Language · ${rewrite.sections.length} of ${sourcePageCount} pages ready…`
+              ? `${rewrite.sourceFileName} — Plain Language · ${
+                  sourcePageCount - rewrite.sections.length
+                } of ${sourcePageCount} pages couldn't be rewritten`
               : `${rewrite.sourceFileName} — Plain Language`
           }
           pageCount={pages.length}

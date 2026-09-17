@@ -1,5 +1,6 @@
 import type {
   RewriteJobSnapshot,
+  RewriteJobStatus,
   RewritePageInput,
   RewriteResponseBody,
   RewriteSection,
@@ -41,32 +42,21 @@ function stripMarkdown(text: string): string {
 }
 
 /**
- * Maps chunks into the shape the reader already knows how to paginate —
- * but only the longest unbroken run starting at the first page, stopping
- * at the first one that isn't done yet. The worker processes pages
- * concurrently (16 lanes), so completion order isn't sequential — page
- * 50 can easily finish before page 10. Revealing whatever's done in
- * whatever order it finished would show the reader pages out of order;
- * this instead withholds anything past the first gap, so what the reader
- * sees always advances 1, 2, 3, ... even though the backend behind it
- * isn't working in that order. A page with no text (a blank/divider page
- * the worker correctly skipped) still counts as "done" for this purpose
- * — it just contributes no section — so it doesn't block later pages
- * from appearing once it's their turn.
+ * Maps a finished job's chunks into the shape the reader paginates.
+ *
+ * This used to reveal only the longest unbroken run starting at page 1,
+ * because pages streamed in as they finished and the worker completes
+ * them out of order (8 lanes). That made a long job in flight show a
+ * fraction of the document, which read as "the rest was lost". The client
+ * now waits for the job to finish, so every chunk here is already
+ * terminal and the whole document is assembled at once. A failed chunk
+ * contributes nothing rather than hiding everything after it.
  */
 export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[] {
   const sorted = [...snapshot.chunks].sort((a, b) => a.chunk_index - b.chunk_index);
   const sections: RewriteSection[] = [];
   for (const c of sorted) {
-    // Only stop for work that hasn't finished yet — those pages are still
-    // coming, and showing later ones first would put the document out of
-    // order. A FAILED chunk is finished; it is never going to arrive, so
-    // stopping on it used to hide every remaining page of the document
-    // forever, even after the job completed. One failed page in a 259-page
-    // book meant the reader got everything before it and nothing after —
-    // the "I only got one page back" report. Skip it and keep going.
-    if (c.status === "pending" || c.status === "processing") break;
-    if (c.status === "failed") continue;
+    if (c.status !== "completed") continue; // failed/never-ran adds nothing
     if (c.rewrite_text) {
       // No heading: chunks map to source PDF pages, not to the document's
       // own structure, so a per-chunk label here would be a fabricated
@@ -103,40 +93,90 @@ export function snapshotToResponseBody(
   };
 }
 
+export interface RewriteProgress {
+  status: RewriteJobStatus;
+  total: number;
+  completed: number;
+  failed: number;
+}
+
+async function fetchProgress(jobId: string): Promise<RewriteProgress> {
+  const res = await fetch(`/api/rewrite-jobs/${jobId}/progress`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Lost contact with the server");
+  const body = await res.json();
+  return {
+    status: body.job.status as RewriteJobStatus,
+    total: Number(body.total ?? 0),
+    completed: Number(body.completed ?? 0),
+    failed: Number(body.failed ?? 0),
+  };
+}
+
+const POLL_INTERVAL_MS = 2000;
+
 /**
- * Opens the SSE stream and calls onUpdate for every snapshot the server
- * sends, until the job reaches a terminal status or onError fires.
- * Returns a function that closes the connection early (e.g. on unmount).
+ * Waits for the whole document, reporting progress while it works.
+ *
+ * Replaced an SSE stream on 2026-09-17. Streaming pages as they completed
+ * only ever surfaced the completed run from page 1, so a 200-page job
+ * mid-flight showed ~19 pages and looked broken. Waiting for the finished
+ * document and showing "N of M pages" while it runs is both simpler and
+ * honest about what's happening.
+ *
+ * Returns a function that abandons the wait (e.g. on unmount).
  */
-export function subscribeToRewriteJob(
+export function waitForRewriteJob(
   jobId: string,
-  onUpdate: (snapshot: RewriteJobSnapshot) => void,
+  filename: string,
+  onProgress: (progress: RewriteProgress) => void,
+  onDone: (body: RewriteResponseBody) => void,
   onError: (message: string) => void
 ): () => void {
-  const source = new EventSource(`/api/rewrite-jobs/${jobId}/stream`);
+  let cancelled = false;
 
-  source.addEventListener("update", (event) => {
-    try {
-      const snapshot = JSON.parse((event as MessageEvent).data) as RewriteJobSnapshot;
-      onUpdate(snapshot);
-      if (snapshot.job.status === "completed" || snapshot.job.status === "failed") {
-        source.close();
-        if (snapshot.job.status === "failed") onError("Rewrite failed");
+  (async () => {
+    // Network blips shouldn't kill a job that may run for many minutes —
+    // only give up once they persist.
+    let consecutiveFailures = 0;
+    while (!cancelled) {
+      try {
+        const progress = await fetchProgress(jobId);
+        consecutiveFailures = 0;
+        if (cancelled) return;
+        onProgress(progress);
+
+        if (progress.status === "completed" || progress.status === "failed") {
+          const res = await fetch(`/api/rewrite-jobs/${jobId}`, {
+            cache: "no-store",
+          });
+          if (!res.ok) throw new Error("Couldn't load the finished document");
+          const snapshot = (await res.json()) as RewriteJobSnapshot;
+          if (cancelled) return;
+          const body = snapshotToResponseBody(filename, snapshot);
+          if (body.sections.length === 0) {
+            onError("The rewrite finished but produced no pages.");
+            return;
+          }
+          onDone(body);
+          return;
+        }
+      } catch (err) {
+        if (cancelled) return;
+        consecutiveFailures += 1;
+        if (consecutiveFailures >= 5) {
+          onError(
+            err instanceof Error ? err.message : "Lost contact with the server"
+          );
+          return;
+        }
       }
-    } catch {
-      onError("Received a malformed update from the server");
-      source.close();
+      await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS));
     }
-  });
+  })();
 
-  source.addEventListener("error", () => {
-    // EventSource retries transient network errors on its own; if the
-    // connection is already closed (terminal status reached above) this
-    // fires harmlessly after close() and is ignored downstream.
-    if (source.readyState === EventSource.CLOSED) {
-      onError("Lost connection to the server");
-    }
-  });
-
-  return () => source.close();
+  return () => {
+    cancelled = true;
+  };
 }
