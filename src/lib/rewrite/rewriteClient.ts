@@ -46,7 +46,20 @@ export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[]
       // own structure, so a per-chunk label here would be a fabricated
       // divider ("Page 6") breaking up continuous prose — the toolbar
       // already shows the reader's actual page position.
-      sections.push({ paragraphs: [c.rewrite_text] });
+      //
+      // Split on blank lines: the writer model returns a chunk's rewrite
+      // as multiple \n\n-separated paragraphs, but nothing downstream
+      // (TextPageRenderer renders each paragraphs[] entry as one <p>, and
+      // CSS has no white-space: pre-line) preserves a bare "\n\n" inside a
+      // single string — browsers collapse it, so the whole page rendered
+      // as one dense, unbroken block of text. Splitting here, once, is
+      // what actually gives each real paragraph its own <p> and CSS
+      // margin.
+      const paragraphs = c.rewrite_text
+        .split(/\n\s*\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+      sections.push({ paragraphs });
     }
   }
   return sections;
