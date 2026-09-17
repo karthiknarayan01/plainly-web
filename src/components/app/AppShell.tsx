@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { Hero } from "@/components/landing/Hero";
 import { FilePicker } from "@/components/landing/FilePicker";
@@ -47,6 +47,31 @@ export function AppShell() {
   const { doc, error: docError } = usePdfDocument(
     status === "idle" ? null : arrayBuffer
   );
+
+  // The shape of a page in the uploaded PDF, so the rewritten reader can
+  // lay its pages out identically to the original one the reader just
+  // came from. Falls back to US Letter until the real size resolves.
+  const [sourcePageAspect, setSourcePageAspect] = useState(11 / 8.5);
+
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    doc
+      .getPage(1)
+      .then((page) => {
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale: 1 });
+        if (viewport.width > 0) {
+          setSourcePageAspect(viewport.height / viewport.width);
+        }
+      })
+      .catch(() => {
+        /* keep the Letter fallback — page geometry is cosmetic */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [doc]);
 
   useEffect(() => {
     if (status !== "loading-document") return;
@@ -137,7 +162,14 @@ export function AppShell() {
   }
 
   if (status === "reading-rewritten" && rewrite) {
-    return <TextReader rewrite={rewrite} onClose={reset} />;
+    return (
+      <TextReader
+        rewrite={rewrite}
+        sourcePageAspect={sourcePageAspect}
+        sourcePageCount={pageCount ?? rewrite.sections.length}
+        onClose={reset}
+      />
+    );
   }
 
   return (

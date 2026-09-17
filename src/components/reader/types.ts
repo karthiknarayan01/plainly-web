@@ -4,7 +4,11 @@ import type { TextPage } from "@/lib/text/paginateText";
 
 export type PageSource =
   | { kind: "pdf"; doc: PDFDocumentProxy; pageNumber: number }
-  | { kind: "text"; page: TextPage };
+  // pageAspect (height/width) travels with the page so a rewritten page
+  // can be drawn to the same shape as the source PDF's pages. The pager
+  // forwards only `source`, `width` and `zoom` to a renderer, so page
+  // geometry has to arrive this way.
+  | { kind: "text"; page: TextPage; pageAspect: number };
 
 export type RenderPriority = "high" | "idle" | "deferred";
 
