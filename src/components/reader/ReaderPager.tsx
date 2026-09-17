@@ -119,23 +119,34 @@ export function ReaderPager({
     if (!root) return;
     const observer = new IntersectionObserver(
       (entries) => {
+        // Work out the most-visible page BEFORE touching state. This used
+        // to live inside the setVisibleIndices updater, which meant
+        // onCurrentPageChange — a parent setState, driving the toolbar's
+        // page counter — was called from inside it. A state updater has
+        // to be pure: React can run it during render, and updating a
+        // different component from there logs "Cannot update a component
+        // while rendering a different component" and risks a dropped
+        // update. Confirmed firing on every real scroll before this.
+        let mostVisible: { index: number; ratio: number } | null = null;
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          const index = Number((entry.target as HTMLElement).dataset.index);
+          if (!mostVisible || entry.intersectionRatio > mostVisible.ratio) {
+            mostVisible = { index, ratio: entry.intersectionRatio };
+          }
+        }
+
         setVisibleIndices((prev) => {
           const next = new Set(prev);
-          let mostVisible: { index: number; ratio: number } | null = null;
           for (const entry of entries) {
             const index = Number((entry.target as HTMLElement).dataset.index);
-            if (entry.isIntersecting) {
-              next.add(index);
-              if (!mostVisible || entry.intersectionRatio > mostVisible.ratio) {
-                mostVisible = { index, ratio: entry.intersectionRatio };
-              }
-            } else {
-              next.delete(index);
-            }
+            if (entry.isIntersecting) next.add(index);
+            else next.delete(index);
           }
-          if (mostVisible) onCurrentPageChange?.(mostVisible.index);
           return next;
         });
+
+        if (mostVisible) onCurrentPageChange?.(mostVisible.index);
       },
       { root, threshold: [0, 0.5, 1] }
     );

@@ -23,6 +23,24 @@ export async function createRewriteJob(
 }
 
 /**
+ * The reader renders plain prose into <p> elements, so any Markdown the
+ * writer model emits would reach the page as literal punctuation —
+ * confirmed on a real page, where the writer produced
+ * "**Why Management and Leadership**" and the reader would have shown the
+ * asterisks. The prompt already asks for plain text with no headings;
+ * this is the belt-and-braces version, since one model ignoring that
+ * instruction shouldn't put asterisks in front of a reader.
+ */
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/^#{1,6}\s+/gm, "") // "## Heading" -> "Heading"
+    .replace(/\*\*(.+?)\*\*/g, "$1") // bold
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2") // italic, leaving ** alone
+    .replace(/^\s*[-*]\s+/gm, "") // list bullets
+    .trim();
+}
+
+/**
  * Maps chunks into the shape the reader already knows how to paginate —
  * but only the longest unbroken run starting at the first page, stopping
  * at the first one that isn't done yet. The worker processes pages
@@ -40,7 +58,15 @@ export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[]
   const sorted = [...snapshot.chunks].sort((a, b) => a.chunk_index - b.chunk_index);
   const sections: RewriteSection[] = [];
   for (const c of sorted) {
-    if (c.status !== "completed") break; // not done yet (or failed) — stop the reveal here
+    // Only stop for work that hasn't finished yet — those pages are still
+    // coming, and showing later ones first would put the document out of
+    // order. A FAILED chunk is finished; it is never going to arrive, so
+    // stopping on it used to hide every remaining page of the document
+    // forever, even after the job completed. One failed page in a 259-page
+    // book meant the reader got everything before it and nothing after —
+    // the "I only got one page back" report. Skip it and keep going.
+    if (c.status === "pending" || c.status === "processing") break;
+    if (c.status === "failed") continue;
     if (c.rewrite_text) {
       // No heading: chunks map to source PDF pages, not to the document's
       // own structure, so a per-chunk label here would be a fabricated
@@ -57,7 +83,7 @@ export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[]
       // margin.
       const paragraphs = c.rewrite_text
         .split(/\n\s*\n/)
-        .map((p) => p.trim())
+        .map((p) => stripMarkdown(p.trim()))
         .filter(Boolean);
       sections.push({ paragraphs });
     }
