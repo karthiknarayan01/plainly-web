@@ -42,7 +42,11 @@ export function chunksToSections(snapshot: RewriteJobSnapshot): RewriteSection[]
   for (const c of sorted) {
     if (c.status !== "completed") break; // not done yet (or failed) — stop the reveal here
     if (c.rewrite_text) {
-      sections.push({ heading: `Page ${c.chunk_index}`, paragraphs: [c.rewrite_text] });
+      // No heading: chunks map to source PDF pages, not to the document's
+      // own structure, so a per-chunk label here would be a fabricated
+      // divider ("Page 6") breaking up continuous prose — the toolbar
+      // already shows the reader's actual page position.
+      sections.push({ paragraphs: [c.rewrite_text] });
     }
   }
   return sections;

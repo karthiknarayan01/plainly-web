@@ -24,6 +24,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-reading: var(--font-literata);
 }
 
 body {
@@ -39,22 +40,29 @@ body {
 
 /* Shared, byte-identical between the live TextPageRenderer and the
    offscreen pagination measurer in lib/text/paginateText.ts — any visual
-   change here must stay in both, or pagination drifts from what's shown. */
+   change here must stay in both, or pagination drifts from what's shown.
+
+   Uses the serif reading font (--font-reading, Literata) rather than the
+   app's sans UI chrome font, and full-contrast foreground rather than the
+   muted gray used for secondary UI text — this is the one place in the
+   app meant to be read continuously for minutes at a time, not scanned,
+   so it gets its own typographic treatment rather than inheriting
+   whatever a UI panel would use. */
 .plainly-text-page {
   box-sizing: border-box;
-  padding: 2.5rem 2rem;
-  font-size: 1.0625rem;
-  line-height: 1.75;
+  padding: 3.5rem 3rem;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
+  font-size: 1.1875rem;
+  line-height: 1.8;
   color: var(--foreground);
 }
 
 .plainly-text-heading {
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--accent);
-  margin: 1.75rem 0 0.75rem;
+  font-family: var(--font-reading), Georgia, "Times New Roman", serif;
+  font-size: 1.375rem;
+  font-weight: 600;
+  color: var(--foreground);
+  margin: 0 0 1.25rem;
 }
 
 .plainly-text-heading:first-child {
@@ -62,6 +70,6 @@ body {
 }
 
 .plainly-text-paragraph {
-  margin: 0 0 1rem;
-  color: var(--foreground-muted);
+  margin: 0 0 1.15em;
+  color: var(--foreground);
 }

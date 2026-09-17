@@ -12,7 +12,9 @@ export interface TextPage {
 export function flattenSections(sections: RewriteSection[]): TextBlock[] {
   const blocks: TextBlock[] = [];
   for (const section of sections) {
-    blocks.push({ type: "heading", text: section.heading });
+    if (section.heading) {
+      blocks.push({ type: "heading", text: section.heading });
+    }
     for (const paragraph of section.paragraphs) {
       blocks.push({ type: "paragraph", text: paragraph });
     }
