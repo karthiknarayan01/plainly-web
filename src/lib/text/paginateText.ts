@@ -90,8 +90,8 @@ export function flattenSections(sections: RewriteSection[]): TextBlock[] {
 /**
  * Paginates at paragraph/heading granularity (a block never splits across
  * pages) by measuring against an offscreen element that shares the exact
- * CSS classes ("grasp-text-page", "grasp-text-heading",
- * "grasp-text-paragraph", defined in globals.css) used by the live
+ * CSS classes ("plainly-text-page", "plainly-text-heading",
+ * "plainly-text-paragraph", defined in globals.css) used by the live
  * TextPageRenderer — the measurement is only valid if those stay in sync.
  *
  * Runs synchronously since mocked rewrites are a handful of short
@@ -109,7 +109,7 @@ export function paginateBlocks(
   }
 
   const measurer = document.createElement("div");
-  measurer.className = "grasp-text-page";
+  measurer.className = "plainly-text-page";
   measurer.style.position = "fixed";
   measurer.style.top = "0";
   measurer.style.left = "-9999px";
@@ -125,7 +125,7 @@ export function paginateBlocks(
   const renderBlock = (block: TextBlock) => {
     const el = document.createElement(block.type === "heading" ? "h3" : "p");
     el.className =
-      block.type === "heading" ? "grasp-text-heading" : "grasp-text-paragraph";
+      block.type === "heading" ? "plainly-text-heading" : "plainly-text-paragraph";
     for (const span of splitBold(block.text)) {
       if (span.bold) {
         const strong = document.createElement("strong");

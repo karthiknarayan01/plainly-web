@@ -23,9 +23,9 @@ const literata = Literata({
 });
 
 export const metadata: Metadata = {
-  title: "Grasp",
+  title: "Plainly",
   description:
-    "Grasp rewrites technical books and financial documents — like earnings statements — so a reader with no background in the subject can understand them, without changing what they say.",
+    "Plainly rewrites technical books and financial documents — like earnings statements — into plain language that's easy to read, without changing what they say.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
