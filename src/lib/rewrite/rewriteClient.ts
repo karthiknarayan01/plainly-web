@@ -6,21 +6,69 @@ import type {
   RewriteSection,
 } from "./types";
 
+/** Shown when the client can't reach our servers at all — a connection
+ *  failure, distinct from the backend responding with a real error. This
+ *  is the message a reader should see; a raw `fetch` failure (the browser
+ *  throws a bare "Failed to fetch" with no detail) and a proxied 502 from
+ *  backendProxy.ts (the backend itself unreachable) both collapse to it,
+ *  since neither tells the reader anything more useful than "try again". */
+export const CONNECTION_ERROR_MESSAGE =
+  "We're sorry, we're having trouble connecting to our servers. Please check your connection and try again.";
+
+// A one-time setup step, not a long poll — a blip here would otherwise
+// surface as an immediate failure before the rewrite has even started.
+// Unlike a voice interface, latency isn't the constraint on this path (the
+// rewrite itself takes minutes), so a couple of quick, bounded retries is
+// worth the extra ~2s worst case to smooth over a transient failure rather
+// than fail the whole attempt on it.
+const JOB_CREATE_RETRIES = 2;
+const JOB_CREATE_RETRY_DELAY_MS = 800;
+
 export async function createRewriteJob(
   filename: string,
   pages: RewritePageInput[]
 ): Promise<string> {
-  const res = await fetch("/api/rewrite-jobs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ filename, pages }),
-  });
-  if (!res.ok) {
-    const body = await res.json().catch(() => null);
-    throw new Error(body?.detail ?? "Failed to create rewrite job");
+  for (let attempt = 0; ; attempt++) {
+    let res: Response;
+    try {
+      res = await fetch("/api/rewrite-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename, pages }),
+      });
+    } catch {
+      // The browser couldn't complete the request at all — offline, DNS
+      // failure, the dev/prod server not running. Nothing to parse; this
+      // is exactly the "client fails to establish a connection" case.
+      if (attempt < JOB_CREATE_RETRIES) {
+        await new Promise((r) => setTimeout(r, JOB_CREATE_RETRY_DELAY_MS));
+        continue;
+      }
+      throw new Error(CONNECTION_ERROR_MESSAGE);
+    }
+
+    if (!res.ok) {
+      // 502 here is specifically backendProxy.ts reporting that OUR OWN
+      // backend was unreachable (see its docstring) — the same class of
+      // transient failure as the fetch throw above, not a real answer
+      // from the backend, so it's retried the same way and, if retries
+      // run out, shown with the same canonical wording — not its own
+      // `detail` text, which would otherwise read as a second, slightly
+      // different "can't connect" message next to this one.
+      if (res.status === 502) {
+        if (attempt < JOB_CREATE_RETRIES) {
+          await new Promise((r) => setTimeout(r, JOB_CREATE_RETRY_DELAY_MS));
+          continue;
+        }
+        throw new Error(CONNECTION_ERROR_MESSAGE);
+      }
+      const body = await res.json().catch(() => null);
+      throw new Error(body?.detail ?? CONNECTION_ERROR_MESSAGE);
+    }
+
+    const { job_id } = (await res.json()) as { job_id: string };
+    return job_id;
   }
-  const { job_id } = (await res.json()) as { job_id: string };
-  return job_id;
 }
 
 /**
@@ -108,10 +156,14 @@ export interface RewriteProgress {
 }
 
 async function fetchProgress(jobId: string): Promise<RewriteProgress> {
+  // No special handling needed for a thrown network failure here — it
+  // propagates to waitForRewriteJob's own try/catch below, which treats
+  // it exactly like a non-ok response: both count toward the same
+  // consecutive-failure limit and end in the same message.
   const res = await fetch(`/api/rewrite-jobs/${jobId}/progress`, {
     cache: "no-store",
   });
-  if (!res.ok) throw new Error("Lost contact with the server");
+  if (!res.ok) throw new Error(`progress request failed (${res.status})`);
   const body = await res.json();
   return {
     status: body.job.status as RewriteJobStatus,
@@ -178,7 +230,7 @@ export function waitForRewriteJob(
           const res = await fetch(`/api/rewrite-jobs/${jobId}`, {
             cache: "no-store",
           });
-          if (!res.ok) throw new Error("Couldn't load the finished document");
+          if (!res.ok) throw new Error(`snapshot request failed (${res.status})`);
           const snapshot = (await res.json()) as RewriteJobSnapshot;
           if (cancelled) return;
           const body = snapshotToResponseBody(filename, snapshot);
@@ -189,13 +241,17 @@ export function waitForRewriteJob(
           onDone(body);
           return;
         }
-      } catch (err) {
+      } catch {
+        // Deliberately not surfacing the caught error's own message: it's
+        // either a bare browser "Failed to fetch" or an internal detail
+        // string from above, neither written for a reader. Whatever the
+        // specific cause — offline, the backend down, a malformed
+        // response — the reader needs the same thing: a plain "we
+        // couldn't reach the server, try again", not a diagnostic.
         if (cancelled) return;
         consecutiveFailures += 1;
         if (consecutiveFailures >= 5) {
-          onError(
-            err instanceof Error ? err.message : "Lost contact with the server"
-          );
+          onError(CONNECTION_ERROR_MESSAGE);
           return;
         }
       }
