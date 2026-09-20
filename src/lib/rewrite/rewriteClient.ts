@@ -100,6 +100,11 @@ export interface RewriteProgress {
   total: number;
   completed: number;
   failed: number;
+  /** True once any page has failed specifically because the AI service
+   *  has run out of credits. One such failure means every other page —
+   *  in flight now, or not yet started — is failing the identical way,
+   *  since an empty balance affects every call, not just one page. */
+  insufficientCredits: boolean;
 }
 
 async function fetchProgress(jobId: string): Promise<RewriteProgress> {
@@ -113,8 +118,15 @@ async function fetchProgress(jobId: string): Promise<RewriteProgress> {
     total: Number(body.total ?? 0),
     completed: Number(body.completed ?? 0),
     failed: Number(body.failed ?? 0),
+    insufficientCredits: Boolean(body.insufficient_credits),
   };
 }
+
+/** Shown in place of the AI service's own error, which is written for a
+ *  developer ("insufficient_credits", or a raw provider error string),
+ *  not the person waiting on their document. */
+export const INSUFFICIENT_CREDITS_MESSAGE =
+  "We're sorry, we can't generate a response right now — the AI service has run out of available credits. Please try again later.";
 
 const POLL_INTERVAL_MS = 2000;
 
@@ -147,6 +159,19 @@ export function waitForRewriteJob(
         const progress = await fetchProgress(jobId);
         consecutiveFailures = 0;
         if (cancelled) return;
+
+        // Stop waiting the instant this is known, rather than at the job's
+        // eventual terminal status. One page failing this way means every
+        // other page is failing it too, so waiting out the rest of a
+        // large document would only delay telling the reader something
+        // they already need to know — and produce a document with most of
+        // its pages silently missing if some pages had already succeeded
+        // before the balance ran out.
+        if (progress.insufficientCredits) {
+          onError(INSUFFICIENT_CREDITS_MESSAGE);
+          return;
+        }
+
         onProgress(progress);
 
         if (progress.status === "completed" || progress.status === "failed") {
